@@ -49,8 +49,61 @@ def clean_campaign_data():
 
 
     """
+    import os
+    import glob
+    import zipfile
+    import pandas as pd
+    from datetime import datetime
+
+    output_dir = "files/output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    input_dir = "files/input"
+    input_files = glob.glob(os.path.join(input_dir, "*.csv.zip"))
+
+    data_frames = []
+    for zip_path in input_files:
+        with zipfile.ZipFile(zip_path, "r") as zip_open:
+            for filename in zip_open.namelist():
+                if filename.endswith(".csv"):
+                    with zip_open.open(filename) as file_open:
+                        df = pd.read_csv(file_open, sep=",")
+                        data_frames.append(df)
+    if not data_frames:
+        print("No se encontraron archivos CSV en los ZIPs.")
+        return
+
+    data = pd.concat(data_frames, ignore_index=True)
+
+    # CLIENT
+    client = data[["client_id", "age", "job", "marital", "education", "credit_default", "mortgage"]].copy()
+    client["job"] = client["job"].str.replace(".", "", regex=False).str.replace("-", "_", regex=False)
+    client["education"] = client["education"].replace("unknown", pd.NA).str.replace(".", "_", regex=False)
+    client["credit_default"] = (client["credit_default"].str.lower() == "yes").astype(int)
+    client["mortgage"] = (client["mortgage"].str.lower() == "yes").astype(int)
+    client.to_csv(os.path.join(output_dir, "client.csv"), index=False)
+
+    # CAMPAIGN
+    campaign = data[["client_id", "number_contacts", "contact_duration", "previous_campaign_contacts", "previous_outcome", "campaign_outcome", "month", "day"]].copy()
+    campaign["previous_outcome"] = (campaign["previous_outcome"].str.lower() == "success").astype(int)
+    campaign["campaign_outcome"] = (campaign["campaign_outcome"].str.lower() == "yes").astype(int)
+    day = data["day"].astype(str).str.zfill(2)
+    month = campaign["month"].apply(lambda x: datetime.strptime(x, "%b").strftime("%m")).str.lower()
+    #month_map = {
+    #    "jan": "01", "feb": "02", "mar": "03", "apr": "04", "may": "05", "jun": "06",
+    #    "jul": "07", "aug": "08", "sep": "09", "oct": "10", "nov": "11", "dec": "12"
+    #}
+    #month = data["month"].str.lower().map(month_map)
+    campaign["last_contact_date"] = "2022-" + month + "-" + day
+    campaign = campaign.drop(columns=["month", "day"])
+    campaign.to_csv(os.path.join(output_dir, "campaign.csv"), index=False)
+
+    # ECONOMICS
+    economics = data[["client_id", "cons_price_idx", "euribor_three_months"]].copy()
+    economics.to_csv(os.path.join(output_dir, "economics.csv"), index=False)
 
     return
+
 
 
 if __name__ == "__main__":
